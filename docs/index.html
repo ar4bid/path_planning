@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<style>
+
+body {
+	margin: 0;
+	width: 100vw;
+	height: 100vh;
+}
+
+main {
+	width: 100%;
+	height: 92vh;
+	position: relative;
+}
+
+nav {
+	width: 100vw;
+	height: 8vh;
+	background-color: #3b3b3b;
+	display: flex;
+	align-items: center;
+}
+
+h1 {
+	color: white;
+	margin: 0;
+	margin-left: 1vw;
+	padding-right: 1vw;
+	border-right: solid;
+	border-width: thin;
+	font-weight: 400;
+}
+
+button {
+	margin-left: 1vw;
+	margin-right: 1vw;
+	border: none;
+	background-color: #17d120;
+	padding: 1vw; 
+	border-radius: 8%;
+}
+
+a {
+	color: white;
+	padding-left: 0.5vw;
+	padding-right: 0.5vw;
+	text-decoration: none;
+	text-align: center;
+	font-size: min(18px, 4vw);
+	padding-bottom: calc((8vh - min(18px,4vw)) / 2);
+	padding-top: calc((8vh - min(18px,4vw)) / 2);
+}
+
+a:hover {
+	background-color: #e1e1e1; 
+}
+
+.tile {
+	background-color: #e1e1e1;
+	position: absolute;
+}
+
+.dropdown_content {
+	display: none;
+	position: absolute
+}
+
+.dropdown {
+	position: relative;
+}
+
+.dropdown:hover .dropdown_content {
+	display: flex;
+}
+
+</style>
+</head>
+
+<body>
+	<nav>
+		<h1>Path Planning Visualizer</h1>
+		<button>Tile Type</button>
+		<a onclick="dijkstra()" href="#" class=dropdown>Dijkstra's Algorithm</a> 
+		<a onclick="clearTiles()" href="#">Clear Page</a>
+	</nav>
+	<main>
+	</main>
+	<script>
+		//setup to check mouse state
+		var mouseDown = false;
+		document.body.addEventListener("mouseup", function(){mouseDown = false;});
+		document.body.addEventListener("mouseleave", function(){mouseDown = false;});	
+
+		//setup for tile selector button
+		var selection = 'start'; //this variable records the state of tile coloring selction
+		document.getElementsByTagName("button")[0].setAttribute('state', 'start');
+		document.getElementsByTagName("button")[0].addEventListener("click", function(){
+			if(this.getAttribute('state') == 'start'){
+				this.setAttribute('state', 'goal');
+				this.style.backgroundColor = "#d11717";
+				selection = 'goal';	
+			} else if(this.getAttribute('state') == 'goal'){
+				this.setAttribute('state', 'wall');
+				this.style.backgroundColor = "#8c8c8c"; 
+				selection = 'wall';	
+			} else if(this.getAttribute('state') == 'wall'){
+				this.setAttribute('state', 'start');
+				this.style.backgroundColor = "#17d120"; 
+				selection = 'start';	
+			}	
+		});
+	
+		//get info about viewport size and setup tile width, margin, and number of tiles
+		var view_width = Math.max(document.documentElement.clinetWidth || 0, window.innerWidth || 0);
+		var view_height = Math.max(document.documentElement.clinetHeight || 0, window.innerHeight || 0);
+		view_height -= view_height*0.08;
+		var tile_width = 20; //this is in unit pixels
+		var tile_margin = Math.floor(view_width*0.002); //0.2vw seems to look nice for tile spacing
+		var num_tiles_horizontal = Math.floor(view_width/(tile_width+tile_margin));
+		var num_tiles_vertical = Math.floor(view_height/(tile_width+tile_margin))
+
+		//Create all our tiles with the data calculated above
+		var new_tile; 
+		var tiles = [];
+		for(let j=0; j<num_tiles_vertical; j++){
+			var tile_row = new Array(num_tiles_horizontal)
+			for(let i=0; i<num_tiles_horizontal; i++){
+				new_tile = document.createElement("div");
+				new_tile.setAttribute("class", "tile");
+				new_tile.style.top = j*(tile_width + tile_margin) + tile_margin + "px";
+				new_tile.style.left = i*(tile_width + tile_margin) + tile_margin + "px";
+				new_tile.style.width = tile_width + "px";
+				new_tile.style.height = tile_width + "px";
+				new_tile.setAttribute("type", 'none');
+				new_tile.setAttribute("x", i);
+				new_tile.setAttribute("y", j);
+				new_tile.setAttribute("dist", Infinity);
+				new_tile.addEventListener("mousedown", clickToggleTile);
+				new_tile.addEventListener("mouseover", mouseOverToggleTile);
+				document.getElementsByTagName("main")[0].appendChild(new_tile);	
+				tile_row[i] = new_tile;
+			}
+			tiles[j] = tile_row;
+		}
+	
+		var i = 0;
+		var j = 0;
+		//var id = setInterval(animate, 5);
+
+		function animate(){
+			if(j == num_tiles_horizontal){
+				j = 0;
+				i++;
+			}	
+			if(i == num_tiles_vertical){
+				clearInterval(id);
+				return;
+			}
+			tiles[i][j].style.backgroundColor = "#8c8c8c";
+			j++;
+		}
+
+		var start_x = -1;	
+		var start_y = -1; //-1 is an indicator that no start position has been chosen
+
+		function clickToggleTile(){
+			mouseDown = true;
+			if(selection == 'wall'){
+				if(this.type == 'wall'){
+					this.style.backgroundColor = "#e1e1e1";
+					this.type = 'none';
+				} else {
+					this.style.backgroundColor = "#8c8c8c";
+					this.type = 'wall';
+				}
+			} else if (selection == 'goal') {
+				if(this.type == 'goal'){
+					this.style.backgroundColor = "#e1e1e1";
+					this.type = 'none';
+				} else {
+					this.style.backgroundColor = "#d11717";
+					this.type = 'goal';
+				}
+			} else if(selection == 'start'){
+				if(this.type == 'start'){
+					this.style.backgroundColor = "#e1e1e1";
+					this.type = 'none';
+					start_x = -1;
+					start_y = -1;
+				} else {
+					this.style.backgroundColor = "#17d120";
+					this.type = 'start';
+					if(start_x != -1 && start_y != -1){ 
+						tiles[start_y][start_x].style.backgroundColor = "#e1e1e1";
+						tiles[start_y][start_x].type = "none";
+					}	
+					start_x = parseInt(this.getAttribute("x"));
+					start_y = parseInt(this.getAttribute("y"));
+				}
+			}
+		}
+		
+		function mouseOverToggleTile(){
+			if(!mouseDown){
+				return;
+			}
+			if(selection == 'wall'){
+				if(this.type == 'wall'){
+					this.style.backgroundColor = "#e1e1e1";
+					this.type = 'none';
+				} else {
+					this.style.backgroundColor = "#8c8c8c";
+					this.type = 'wall';
+				}
+			} else if(selection == 'goal'){
+				if(this.type == 'goal'){
+					this.style.backgroundColor = "#e1e1e1";
+					this.type = 'none';
+				} else {
+					this.style.backgroundColor = "#d11717";
+					this.type = 'goal';
+				}
+			}
+		}
+
+		function clearTiles(){
+			for(let i=0; i<tiles.length; i++){
+				for(let j=0; j<tiles[0].length; j++){
+					let current_tile = tiles[i][j];
+					current_tile.setAttribute("dist", Infinity);
+					current_tile.type = 'none';
+					current_tile.style.backgroundColor = "#e1e1e1";
+				}
+			}	
+		}	
+
+		var current_tile;
+		var id;
+		function dijkstra(){
+			if(start_y == -1 || start_x == -1){
+				console.log("Error: No start chosen");
+				return;
+			}
+			tiles[start_y][start_x].setAttribute('dist', 0);
+			id = setInterval(dijkstraAnimateSearch, 0);
+			function dijkstraAnimateSearch(){
+				current_tile = minDistTile();
+				if(current_tile == undefined){
+					clearInterval(id);
+					console.log("No end point found");
+					return;
+				} else if(current_tile.type == 'goal'){
+					clearInterval(id);
+					id = setInterval(dijkstraAnimatePath, 50);
+				}
+				current_tile.setAttribute('visited', true);
+				let neighbours = getValidNeighbours(current_tile);
+				for(let i=0; i<neighbours.length; i++){
+					let alt = parseInt(current_tile.getAttribute('dist')) + length(current_tile, neighbours[i]);
+					if(alt < neighbours[i].getAttribute('dist')){
+						neighbours[i].setAttribute('dist', alt);
+						neighbours[i].setAttribute('prev_x', current_tile.getAttribute('x'));
+						neighbours[i].setAttribute('prev_y', current_tile.getAttribute('y'));
+						if(neighbours[i].type != 'goal'){
+							neighbours[i].style.backgroundColor = "#03dbfc";	
+						}	
+					}
+				}
+			}
+	
+			function dijkstraAnimatePath(){
+				if(current_tile.getAttribute('x') != start_x || current_tile.getAttribute('y') != start_y){
+					current_tile.style.backgroundColor = "#17d120";
+					current_tile = tiles[current_tile.getAttribute('prev_y')][current_tile.getAttribute('prev_x')];
+				} else {
+					clearInterval(id);
+				}
+			}
+	
+			function minDistTile(){
+				//find the tile is tiles with min dist, which has not yet been visited
+				//future implementation will use a min heap instead of searching an array
+				let min = Infinity;
+				let min_tile;
+				for(let i=0; i<tiles.length; i++){
+					for(let j=0; j<tiles[i].length; j++){
+						if(parseInt(tiles[i][j].getAttribute('dist')) < min){
+							if(tiles[i][j].getAttribute('visited') != 'true'){
+								min_tile = tiles[i][j];
+								min = parseInt(tiles[i][j].getAttribute('dist'));
+							}
+						}		
+					}
+				}
+				return min_tile;
+			}
+
+			function getValidNeighbours(current_tile){
+				let y = parseInt(current_tile.getAttribute('y'));
+				let x = parseInt(current_tile.getAttribute('x'));
+				let neighbours = [];
+				let i = 0;
+				let walls = [false, false, false, false]; //this array represents the 4 neightbours which are not diagonal. The first is the tile above current and they iterate clock-wise 
+				if(y != 0){
+					//handle top tile
+					if(tiles[y-1][x].type != 'wall'){
+						neighbours[i] = tiles[y-1][x];
+						i++;
+					} else {
+						walls[0] = true;
+					}
+				}
+				//handle bottom tile
+				if(y+1 < tiles.length){
+					if(tiles[y+1][x].type != 'wall'){
+						neighbours[i] = tiles[y+1][x];
+						i++;
+					} else {
+						walls[2] = true;
+					}
+				}	
+				//handle left tile
+				if(x != 0){
+					if(tiles[y][x-1].type != 'wall'){
+						neighbours[i] = tiles[y][x-1];
+						i++;
+					} else {
+						walls[1] = true;
+					}
+				}
+				//handle right tile
+				if(x+1 < tiles[0].length){
+					if(tiles[y][x+1].type != 'wall'){
+						neighbours[i] = tiles[y][x+1];
+						i++;
+					} else {
+						walls[3] = true;
+					}
+				}
+				//handle top left
+				if(x != 0 && y != 0 && !walls[0] && !walls[3]){
+					if(tiles[y-1][x-1].type != 'wall'){
+						neighbours[i] = tiles[y-1][x-1];
+						i++;
+					}	
+				}
+				//handle top right	
+				if(x+1 < tiles[0].length  && y != 0 && !walls[0] && !walls[1]){
+					if(tiles[y-1][x+1].type != 'wall'){
+						neighbours[i] = tiles[y-1][x+1];
+						i++;
+					}	
+				}
+				//handle bottom right
+				if(x+1 < tiles[0].length  && y+1 < tiles.length && !walls[1] && !walls[2]){
+					if(tiles[y+1][x+1].type != 'wall'){
+						neighbours[i] = tiles[y+1][x+1];
+						i++;
+					}	
+				}
+				//handle bottom left
+				if(x != 0 && y+1 < tiles.length && !walls[2] && !walls[3]){
+					if(tiles[y+1][x-1].type != 'wall'){
+						neighbours[i] = tiles[y+1][x-1];
+						i++;
+					}	
+				}
+				return neighbours;
+			}
+
+			function length(tile1, tile2){
+				//return the distance between two neighbouring tiles
+				let x1 = tile1.getAttribute('x');
+				let y1 = tile1.getAttribute('y');
+				let x2 = tile2.getAttribute('x');
+				let y2 = tile2.getAttribute('y');
+				if(x1 == x2 || y1 == y2){
+					return 1;
+				} else {
+					//if they're diagonal return the hypotenuse
+					return 1.414;
+				}
+			}
+		}
+ 
+	</script>
+</body>
+
+</html>
